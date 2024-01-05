@@ -122,6 +122,9 @@ WEBVIEW_API webview_t webview_create(int debug, void *window);
 // Destroys a webview and closes the native window.
 WEBVIEW_API void webview_destroy(webview_t w);
 
+// Steps one step in the main loop
+WEBVIEW_API bool webview_step(webview_t w, int blocking);
+
 // Runs the main loop until it's terminated. After this function exits - you
 // must destroy the webview.
 WEBVIEW_API void webview_run(webview_t w);
@@ -773,7 +776,8 @@ constexpr auto webkit_web_view_run_javascript =
 class gtk_webkit_engine {
 public:
   gtk_webkit_engine(bool debug, void *window)
-      : m_window(static_cast<GtkWidget *>(window)) {
+      : m_window(static_cast<GtkWidget *>(window))
+      , has_loop{0} {
     auto owns_window = !window;
     if (owns_window) {
       if (gtk_init_check(nullptr, nullptr) == FALSE) {
@@ -827,8 +831,20 @@ public:
   }
   virtual ~gtk_webkit_engine() = default;
   void *window() { return (void *)m_window; }
-  void run() { gtk_main(); }
-  void terminate() { gtk_main_quit(); }
+  void run() {
+    has_loop = true;
+    gtk_main();
+    has_loop = false;
+  }
+  bool step(int blocking) {
+    gtk_main_iteration_do(blocking);
+    return gtk_events_pending();
+  }
+  void terminate() {
+    if (has_loop) {
+      gtk_main_quit();
+    }
+  }
   void dispatch(std::function<void()> f) {
     g_idle_add_full(G_PRIORITY_HIGH_IDLE, (GSourceFunc)([](void *f) -> int {
                       (*static_cast<dispatch_fn_t *>(f))();
@@ -962,6 +978,7 @@ private:
 
   GtkWidget *m_window;
   GtkWidget *m_webview;
+  std::atomic_uint has_loop;
 };
 
 } // namespace detail
@@ -2923,6 +2940,10 @@ WEBVIEW_API webview_t webview_create(int debug, void *wnd) {
 
 WEBVIEW_API void webview_destroy(webview_t w) {
   delete static_cast<webview::webview *>(w);
+}
+
+WEBVIEW_API bool webview_step(webview_t w, int blocking) {
+  return static_cast<webview::webview *>(w)->step(blocking);
 }
 
 WEBVIEW_API void webview_run(webview_t w) {
