@@ -199,6 +199,9 @@ WEBVIEW_API webview_t webview_create(int debug, void *window);
  */
 WEBVIEW_API void webview_destroy(webview_t w);
 
+// Steps one step in the main loop
+WEBVIEW_API bool webview_step(webview_t w, int blocking);
+
 /**
  * Runs the main loop until it's terminated.
  *
@@ -998,6 +1001,7 @@ if (status === 0) {\
   void *widget() { return widget_impl(); }
   void *browser_controller() { return browser_controller_impl(); };
   void run() { run_impl(); }
+  bool step(int blocking) { return step_impl(blocking); }
   void terminate() { terminate_impl(); }
   void dispatch(std::function<void()> f) { dispatch_impl(f); }
   void set_title(const std::string &title) { set_title_impl(title); }
@@ -1016,6 +1020,7 @@ protected:
   virtual void *widget_impl() = 0;
   virtual void *browser_controller_impl() = 0;
   virtual void run_impl() = 0;
+  virtual bool step_impl(int blocking) = 0;
   virtual void terminate_impl() = 0;
   virtual void dispatch_impl(std::function<void()> f) = 0;
   virtual void set_title_impl(const std::string &title) = 0;
@@ -1236,7 +1241,9 @@ constexpr auto webkit_web_view_run_javascript =
 class gtk_webkit_engine : public engine_base {
 public:
   gtk_webkit_engine(bool debug, void *window)
-      : m_owns_window{!window}, m_window(static_cast<GtkWidget *>(window)) {
+      : m_owns_window{!window}
+      , m_window(static_cast<GtkWidget *>(window))
+      , has_loop{0} {
     if (m_owns_window) {
       if (gtk_init_check(nullptr, nullptr) == FALSE) {
         return;
@@ -1318,9 +1325,19 @@ public:
   void *window_impl() override { return (void *)m_window; }
   void *widget_impl() override { return (void *)m_webview; }
   void *browser_controller_impl() override { return (void *)m_webview; };
-  void run_impl() override { gtk_main(); }
+  void run_impl() override {
+    has_loop = true;
+    gtk_main();
+    has_loop = false;
+  }
+  bool step_impl(int blocking) override {
+    gtk_main_iteration_do(blocking);
+    return gtk_events_pending();
+  }
   void terminate_impl() override {
-    dispatch_impl([] { gtk_main_quit(); });
+    if(has_loop) {
+      dispatch_impl([] { gtk_main_quit(); });
+    }
   }
   void dispatch_impl(std::function<void()> f) override {
     g_idle_add_full(G_PRIORITY_HIGH_IDLE, (GSourceFunc)([](void *f) -> int {
@@ -1448,6 +1465,7 @@ private:
   bool m_owns_window{};
   GtkWidget *m_window{};
   GtkWidget *m_webview{};
+  std::atomic_uint has_loop;
 };
 
 } // namespace detail
@@ -3509,6 +3527,10 @@ WEBVIEW_API webview_t webview_create(int debug, void *wnd) {
 
 WEBVIEW_API void webview_destroy(webview_t w) {
   delete static_cast<webview::webview *>(w);
+}
+
+WEBVIEW_API bool webview_step(webview_t w, int blocking) {
+  return static_cast<webview::webview *>(w)->step(blocking);
 }
 
 WEBVIEW_API void webview_run(webview_t w) {
