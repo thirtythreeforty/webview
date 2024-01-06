@@ -3269,6 +3269,20 @@ public:
       DispatchMessageW(&msg);
     }
   }
+  bool step_impl(bool blocking) override {
+    MSG msg;
+    bool have_msg;
+    if(blocking) {
+      have_msg = GetMessageW(&msg, nullptr, 0, 0);
+    } else {
+      have_msg = PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE);
+    }
+    if (have_msg) {
+      TranslateMessage(&msg);
+      DispatchMessageW(&msg);
+    }
+    return PeekMessageW(&msg, nullptr, 0, 0, PM_NOREMOVE);
+  }
   void *window_impl() override { return (void *)m_window; }
   void *widget_impl() override { return (void *)m_widget; }
   void *browser_controller_impl() override { return (void *)m_controller; }
