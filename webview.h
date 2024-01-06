@@ -2588,6 +2588,20 @@ public:
       DispatchMessageW(&msg);
     }
   }
+  bool step(bool blocking) {
+    MSG msg;
+    bool have_msg;
+    if(blocking) {
+      have_msg = GetMessageW(&msg, nullptr, 0, 0);
+    } else {
+      have_msg = PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE);
+    }
+    if (have_msg) {
+      TranslateMessage(&msg);
+      DispatchMessageW(&msg);
+    }
+    return PeekMessageW(&msg, nullptr, 0, 0, PM_NOREMOVE);
+  }
   void *window() { return (void *)m_window; }
   void terminate() { PostQuitMessage(0); }
   void dispatch(dispatch_fn_t f) {
